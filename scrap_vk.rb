@@ -12,7 +12,7 @@ require 'capybara/dsl'
 class ScrapVK
   include Capybara::DSL
 
-  PROTOCOL_PREABL = "https://"
+  PROTOCOL_PREAMBL = "https://"
   SAVE_FOLDER_NAME = "vk/images/"
   HOST_NAME = "vk.com"
 
@@ -40,7 +40,7 @@ class ScrapVK
       end
     end
 
-    Capybara.app_host = PROTOCOL_PREABL+HOST_NAME
+    Capybara.app_host = PROTOCOL_PREAMBL+HOST_NAME
     visit(@start_page)
 
     login()
@@ -95,7 +95,7 @@ class ScrapVK
     if (!src.nil?)
       # img_name = /(?<=\/{1})(\w*.(jpg|png|gif|bmp){1})/.match(src).to_s
 
-      if (!/(http)/.match(src).nil?)
+      if (!/(#{PROTOCOL_PREAMBL})/.match(src).nil?)
         # uri = /(\/{1}\w*.{1}(jpg|png|gif|bmp){1}$)/.match(src).to_s
         uri = File.basename(src)
         puts " img name: "+uri
