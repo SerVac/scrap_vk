@@ -1,57 +1,57 @@
 require 'open-uri'
 require 'nokogiri'
+require 'mechanize'
 require 'capybara-webkit'
 require 'capybara'
 require 'capybara/dsl'
 
 
 # Params:
-# +ARGV[0]+:: login
-# +ARGV[1]+:: pass
-# +ARGV[2]+:: start scrap from page (user_id or feeds ...)
+# +ARGV[0]+:: scrap album page (album...)
 class ScrapVK
   include Capybara::DSL
 
   PROTOCOL_PREAMBL = "https://"
-  SAVE_FOLDER_NAME = "vk/images/"
   HOST_NAME = "vk.com"
-
 
   def initialize
     puts "params: "+ARGV.to_s
-    @login = ""
-    @pass = ""
+    @save_folder_name = "vk/images"
+    # @login = ""
+    # @pass = ""
     @start_page = "/"
     if (!ARGV.empty?)
-      @login = ARGV.shift
-      @pass = ARGV.shift
-      #{@start_page} += ARGV.shift
+      # @login = ARGV.shift
+      # @pass = ARGV.shift
+      @start_page += ARGV.shift
     end
 
-    @start_page = "/album19839792_000"
-
-    # @session = Capybara::Session.new :webkit
-    Capybara.default_driver = :webkit
+    @save_folder_name += @start_page +"/"
+    puts "save folder: " + @save_folder_name
 
     begin
+      # @session = Capybara::Session.new :webkit
       Capybara.register_driver :webkit do |app|
         Capybara::Webkit::Driver.new(app).tap do |driver|
           driver.block_unknown_urls
           driver.allow_url HOST_NAME+"/*"
+          driver.allow_url "vk.me/*"
         end
       end
+      Capybara.default_driver = :webkit
+
     end
 
     Capybara.app_host = PROTOCOL_PREAMBL+HOST_NAME
     visit(@start_page)
 
-    login()
+    # login()
     imgSaver()
 
   end
 
+
   def login
-    # puts @session.html
     putsCurrUrl()
 
     within('form#quick_login_form') do
@@ -65,22 +65,26 @@ class ScrapVK
   end
 
   def imgSaver
-    system 'mkdir', '-p', SAVE_FOLDER_NAME
+    system 'mkdir', '-p', @save_folder_name
 
+    putsCurrUrl()
     img_total = find('.summary').text
-    img_total = /\s(\d*)\s/.match(img_total)[0].to_i
-    puts "num= "+img_total.to_s
+    img_total = /.(\d*)./.match(img_total)[0].to_i
+    puts " In album '"+img_total.to_s+"' images"
 
     img_start = first(:css, 'div.photo_row > a')
     img_start.click()
 
     img_list = []
     ignore_list = []
-    css_photo = 'a#pv_photo'
-    css_origin = 'a#pv_open_original'
+
+    css_photo = '#pv_photo'
+    css_origin = '#pv_open_original'
     file_name = ''
 
+    count_total = 0
     count_retry = 0
+
     begin
       puts ""
       puts "--next"
@@ -92,37 +96,36 @@ class ScrapVK
         puts img_link['href']
 
         begin
+          count_total += 1
           if (imgs_box.assert_selector(css_origin))
             file_name = saveByLink(imgs_box.find(css_origin)['href'])
           else
             file_name = saveByImgNode(img_link.find('img'))
           end
+
           img_list.push(file_name)
           puts " file added: "+file_name
-          img_link.click()
-          puts " clicked"
 
-          count_retry=0
+          count_retry = 0
+          img_link.click()
 
         rescue StandardError => e
-          # file_name = /(?<=\({1})(.+)/.match(e.to_s).to_s
-          # puts " error fname= "+@curr_file_name
           if (!ignore_list.include?(@curr_file_name))
+            count_retry = 0
             ignore_list.push(@curr_file_name)
-            puts " :ignore"
+            puts " :ignore "+ignore_list.size.to_s
           else
-            count_retry+=1
+            count_retry += 1
             puts " :retry "+count_retry.to_s
-            if (count_retry > 3)
-              count_retry = 0
-              puts " :clear "+count_retry.to_s
-              puts " :break"
+            sleep 1
+            if (count_retry > 1)
+              puts " Something wrong! Retry break!"
               break
             end
           end
 
           img_link.click()
-          sleep 2
+
         end
 
       else
@@ -130,31 +133,17 @@ class ScrapVK
         break
       end
 
-    end while img_list.size < img_total
+    end while count_total <= img_total
+
     puts img_list.to_s
-    puts "- the '"+img_list.size.to_s+"' images from album are '"+@start_page+"' saved! -"
+    puts "- The '"+img_list.size.to_s+"' images from album '"+@start_page+"' is saved! -"
 
-=begin
-    img_total = find('.summary').text
-    img_total = /\s(\d*)\s/.match(img_total)[0].to_i
-    # puts "num= "+img_total.to_s
-
-    img_pool = []
-    @doc = Nokogiri::HTML.parse(page.html)
-    @doc.css('div.photo_row').each do |i|
-      img_pool.push(i)
-    end
-    puts img_pool.count
-    i = img_pool[0]
-    find('#'+i['id']).click()
-=end
 
   end
 
   def saveByImgNode(img_node)
     puts "-Save img: "+img_node.to_s
     return saveByLink(img_node['src'])
-    # img_name = /(?<=\/{1})(\w*.(jpg|png|gif|bmp){1})/.match(src).to_s
   end
 
   def saveByLink(link)
@@ -166,14 +155,13 @@ class ScrapVK
         @curr_file_name = file_name
         puts " file name: "+file_name
 
-        save_as = SAVE_FOLDER_NAME+file_name
+        save_as = @save_folder_name+file_name
         if (!File.file?(save_as))
           File.open(save_as, 'wb') { |f| f.write(open(link).read) }
-          puts " file save as path: "+save_as
+          puts " file save path: "+save_as
           return file_name.to_s
         end
 
-        puts " :file '"+file_name+"' is exist !"
       else
         puts " :save link is not consist 'http' !"
       end
@@ -181,11 +169,7 @@ class ScrapVK
       " :save link is empty!"
     end
 
-
-    # rescue SystemCallError
-    #   " :file is exist" if file_name.nil?
-
-    raise " :file ("+file_name+") is exist"
+    raise " :file '"+file_name+"' is exist!"
     return nil
   end
 
